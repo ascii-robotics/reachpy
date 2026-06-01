@@ -1,0 +1,18 @@
+[package]
+name = "reachpy-messages"
+version = "0.1.0"
+edition = "2021"
+description = "ReachPy message system — Python-native ROS2 message definitions with CDR serialization"
+
+[lib]
+name = "reachpy_messages"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3     = { version = "0.28", features = ["extension-module"] }
+cdr      = "0.2"
+thiserror = "1.0"
+byteorder = "1.5"
+
+[dev-dependencies]
+pyo3 = { version = "0.28", features = ["auto-initialize"] }
