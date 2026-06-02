@@ -7,6 +7,7 @@ description = "ReachPy message system — Python-native ROS2 message definitions
 [lib]
 name = "reachpy_messages"
 crate-type = ["cdylib", "rlib"]
+path = "lib.rs"
 
 [dependencies]
 pyo3     = { version = "0.28", features = ["extension-module"] }
