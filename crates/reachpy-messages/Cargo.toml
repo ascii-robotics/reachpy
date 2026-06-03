@@ -5,7 +5,7 @@ edition = "2021"
 description = "ReachPy message system — Python-native ROS2 message definitions with CDR serialization"
 
 [lib]
-name = "reachpy_messages"
+name = "_reachpy_messages"
 crate-type = ["cdylib", "rlib"]
 path = "lib.rs"
 

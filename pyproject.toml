@@ -28,3 +28,11 @@ classifiers = [
 features = ["pyo3/extension-module"]
 python-source = "python"
 module-name = "reachpy._reachpy_messages"
+# 1. Point to the specific crate that handles PyO3
+manifest-path = "crates/reachpy-messages/Cargo.toml"
+# 2. Package your workspace configurations and source directories into PyPI tarballs
+include = [
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/**/*"
+]
