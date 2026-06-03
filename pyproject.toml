@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "reachpy"
-version = "0.1.0"
+version = "0.1.2a2"
 description = "Python-native robotics framework built on ROS2"
 requires-python = ">=3.10"
 license = { text = "MIT" }

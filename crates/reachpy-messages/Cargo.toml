@@ -1,6 +1,6 @@
 [package]
 name = "reachpy-messages"
-version = "0.1.0"
+version = "0.1.1-alpha.2"
 edition = "2021"
 description = "ReachPy message system — Python-native ROS2 message definitions with CDR serialization"
 

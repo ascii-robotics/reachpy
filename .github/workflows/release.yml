@@ -3,7 +3,7 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - 'v*' # Triggers when you push tags like v0.1.1
+      - 'v0.1.2'
 
 permissions:
   contents: read
