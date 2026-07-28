@@ -1,3 +1,4 @@
+### Find the latest release of ReachPy on: [ReachPy PyPI Module](https://pypi.org/project/reachpy/0.1.2a2/)
 # ReachPy 🚀
 
 **ReachPy** is a modern Python framework built to dramatically improve the Developer Experience (DX) for robotics engineers using ROS 2. 

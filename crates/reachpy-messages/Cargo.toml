@@ -1,11 +1,15 @@
 [package]
 name = "reachpy-messages"
+<<<<<<< HEAD
 version = "0.1.1-alpha.1"
+=======
+version = "0.1.1-alpha.2"
+>>>>>>> eaf4285464ec4805ee7fe56ee348eae56ab5940d
 edition = "2021"
 description = "ReachPy message system — Python-native ROS2 message definitions with CDR serialization"
 
 [lib]
-name = "reachpy_messages"
+name = "_reachpy_messages"
 crate-type = ["cdylib", "rlib"]
 path = "lib.rs"
 
