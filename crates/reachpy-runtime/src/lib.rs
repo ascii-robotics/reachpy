@@ -116,7 +116,7 @@ impl PyPublisher {
 }
 
 #[pymodule]
-fn _reachpy_runtime(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn _reachpy_runtime(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNode>()?;
     m.add_class::<PyPublisher>()?;
     Ok(())

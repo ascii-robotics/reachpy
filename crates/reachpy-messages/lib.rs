@@ -567,7 +567,7 @@ fn deserialize(py: Python<'_>, schema_name: &str, data: &[u8]) -> PyResult<Py<Py
 }
 
 #[pymodule]
-fn _reachpy_messages(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn _reachpy_messages(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(register_schema, m)?)?;
     m.add_function(wrap_pyfunction!(get_schema, m)?)?;
     m.add_function(wrap_pyfunction!(schema_exists, m)?)?;
