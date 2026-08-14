@@ -4,12 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "reachpy"
-<<<<<<< HEAD
-version = "0.1.1a1"
-=======
-version = "0.1.2a2"
->>>>>>> eaf4285464ec4805ee7fe56ee348eae56ab5940d
-description = "Python-native robotics framework built on ROS2"
+version = "0.1.2a3"
+description = "Python-native robotics framework"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 readme = "README.md"
@@ -31,10 +27,8 @@ classifiers = [
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
-module-name = "reachpy._reachpy_messages"
-# 1. Point to the specific crate that handles PyO3
-manifest-path = "crates/reachpy-messages/Cargo.toml"
-# 2. Package your workspace configurations and source directories into PyPI tarballs
+module-name = "reachpy._reachpy"
+manifest-path = "crates/reachpy-python/Cargo.toml"
 include = [
     "Cargo.lock",
     "Cargo.toml",

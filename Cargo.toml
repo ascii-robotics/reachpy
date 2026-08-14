@@ -1,5 +1,7 @@
 [workspace]
 members = [
     "crates/reachpy-messages",
+    "crates/reachpy-runtime",
+    "crates/reachpy-python",
 ]
 resolver = "2"

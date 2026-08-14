@@ -1,0 +1,13 @@
+[package]
+name = "reachpy-runtime"
+version = "0.1.2-alpha.3"
+edition = "2021"
+
+[lib]
+name = "_reachpy_runtime"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+zenoh = "1"
+thiserror = "1"

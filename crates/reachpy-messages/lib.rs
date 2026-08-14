@@ -2,13 +2,15 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
-use pyo3::IntoPyObjectExt;
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::sync::{Mutex, OnceLock};
 use thiserror::Error;
 
-const CDR_LE_ENCAPSULATION: [u8; 4] = [0x00, 0x01, 0x00, 0x00];
+/// ReachPy Binary v1 — a single-byte format tag, no ROS2/CDR alignment
+/// padding anywhere. Replaces the CDR encapsulation header this crate used
+/// to write. Bump this if the wire format ever changes shape.
+const FORMAT_TAG: u8 = 0x01;
 
 #[derive(Clone)]
 struct FieldSchema {
@@ -96,7 +98,6 @@ impl FieldType {
             Self::Duration => "duration".to_string(),
         }
     }
-
 }
 
 #[derive(Clone)]
@@ -240,6 +241,10 @@ fn type_name_for_value(value: &Bound<'_, PyAny>) -> &'static str {
     }
 }
 
+// ── encode ──────────────────────────────────────────────────────────────
+// No alignment padding anywhere below (that was purely a ROS2/CDR wire
+// requirement) — every field is packed back-to-back at its natural width.
+
 fn write_field_value(
     buf: &mut Vec<u8>,
     py: Python<'_>,
@@ -264,131 +269,57 @@ fn write_by_type(
 ) -> Result<(), MessageError> {
     match field_type {
         FieldType::Bool => {
-            align_write(buf, 1);
-            buf.write_u8(if value
-                .extract::<bool>()
-                .map_err(|_| mismatch("bool".to_string()))?
-            {
+            buf.write_u8(if value.extract::<bool>().map_err(|_| mismatch("bool".to_string()))? {
                 1
             } else {
                 0
             })
             .map_err(|e| MessageError::SerializationError(e.to_string()))?
         }
-        FieldType::Int8 => {
-            align_write(buf, 1);
-            buf.write_i8(
-                value
-                    .extract::<i8>()
-                    .map_err(|_| mismatch("int8".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::Int16 => {
-            align_write(buf, 2);
-            buf.write_i16::<LittleEndian>(
-                value
-                    .extract::<i16>()
-                    .map_err(|_| mismatch("int16".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::Int32 => {
-            align_write(buf, 4);
-            buf.write_i32::<LittleEndian>(
-                value
-                    .extract::<i32>()
-                    .map_err(|_| mismatch("int32".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::Int64 => {
-            align_write(buf, 8);
-            buf.write_i64::<LittleEndian>(
-                value
-                    .extract::<i64>()
-                    .map_err(|_| mismatch("int64".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::UInt8 => {
-            align_write(buf, 1);
-            buf.write_u8(
-                value
-                    .extract::<u8>()
-                    .map_err(|_| mismatch("uint8".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::UInt16 => {
-            align_write(buf, 2);
-            buf.write_u16::<LittleEndian>(
-                value
-                    .extract::<u16>()
-                    .map_err(|_| mismatch("uint16".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::UInt32 => {
-            align_write(buf, 4);
-            buf.write_u32::<LittleEndian>(
-                value
-                    .extract::<u32>()
-                    .map_err(|_| mismatch("uint32".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::UInt64 => {
-            align_write(buf, 8);
-            buf.write_u64::<LittleEndian>(
-                value
-                    .extract::<u64>()
-                    .map_err(|_| mismatch("uint64".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::Float32 => {
-            align_write(buf, 4);
-            buf.write_f32::<LittleEndian>(
-                value
-                    .extract::<f32>()
-                    .map_err(|_| mismatch("float32".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
-        FieldType::Float64 => {
-            align_write(buf, 8);
-            buf.write_f64::<LittleEndian>(
-                value
-                    .extract::<f64>()
-                    .map_err(|_| mismatch("float64".to_string()))?,
-            )
-            .map_err(|e| MessageError::SerializationError(e.to_string()))?
-        }
+        FieldType::Int8 => buf
+            .write_i8(value.extract::<i8>().map_err(|_| mismatch("int8".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::Int16 => buf
+            .write_i16::<LittleEndian>(value.extract::<i16>().map_err(|_| mismatch("int16".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::Int32 => buf
+            .write_i32::<LittleEndian>(value.extract::<i32>().map_err(|_| mismatch("int32".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::Int64 => buf
+            .write_i64::<LittleEndian>(value.extract::<i64>().map_err(|_| mismatch("int64".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::UInt8 => buf
+            .write_u8(value.extract::<u8>().map_err(|_| mismatch("uint8".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::UInt16 => buf
+            .write_u16::<LittleEndian>(value.extract::<u16>().map_err(|_| mismatch("uint16".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::UInt32 => buf
+            .write_u32::<LittleEndian>(value.extract::<u32>().map_err(|_| mismatch("uint32".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::UInt64 => buf
+            .write_u64::<LittleEndian>(value.extract::<u64>().map_err(|_| mismatch("uint64".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::Float32 => buf
+            .write_f32::<LittleEndian>(value.extract::<f32>().map_err(|_| mismatch("float32".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
+        FieldType::Float64 => buf
+            .write_f64::<LittleEndian>(value.extract::<f64>().map_err(|_| mismatch("float64".to_string()))?)
+            .map_err(|e| MessageError::SerializationError(e.to_string()))?,
         FieldType::RosString => {
-            align_write(buf, 4);
-            let data = value
-                .extract::<String>()
-                .map_err(|_| mismatch("string".to_string()))?;
+            let data = value.extract::<String>().map_err(|_| mismatch("string".to_string()))?;
             let bytes = data.as_bytes();
-            let ros_len = bytes.len() as u32 + 1;
-            buf.write_u32::<LittleEndian>(ros_len)
+            buf.write_u32::<LittleEndian>(bytes.len() as u32)
                 .map_err(|e| MessageError::SerializationError(e.to_string()))?;
             buf.extend_from_slice(bytes);
-            buf.push(0_u8);
         }
         FieldType::RosBytes => {
-            align_write(buf, 4);
-            let data = value
-                .cast::<PyBytes>()
-                .map_err(|_| mismatch("bytes".to_string()))?
-                .as_bytes();
+            let data = value.cast::<PyBytes>().map_err(|_| mismatch("bytes".to_string()))?.as_bytes();
             buf.write_u32::<LittleEndian>(data.len() as u32)
                 .map_err(|e| MessageError::SerializationError(e.to_string()))?;
             buf.extend_from_slice(data);
         }
         FieldType::Array(inner) => {
-            align_write(buf, 4);
             let items = value
                 .cast::<PyList>()
                 .map_err(|_| mismatch(format!("array<{}>", inner.as_name())))?;
@@ -404,9 +335,7 @@ fn write_by_type(
             }
         }
         FieldType::Struct(schema_name) => {
-            let nested = value
-                .cast::<PyDict>()
-                .map_err(|_| mismatch(format!("struct:{schema_name}")))?;
+            let nested = value.cast::<PyDict>().map_err(|_| mismatch(format!("struct:{schema_name}")))?;
             let nested_schema = get_schema_internal(schema_name)?;
             for nested_field in &nested_schema.fields {
                 let nested_value = nested
@@ -429,10 +358,7 @@ fn write_by_type(
             }
         }
         FieldType::Time | FieldType::Duration => {
-            let dict = value
-                .cast::<PyDict>()
-                .map_err(|_| mismatch(field_type.as_name()))?;
-            align_write(buf, 4);
+            let dict = value.cast::<PyDict>().map_err(|_| mismatch(field_type.as_name()))?;
             let sec = dict
                 .get_item("sec")
                 .map_err(|e| MessageError::SerializationError(e.to_string()))?
@@ -441,7 +367,6 @@ fn write_by_type(
                 .map_err(|_| mismatch(format!("{} with int32 sec", field_type.as_name())))?;
             buf.write_i32::<LittleEndian>(sec)
                 .map_err(|e| MessageError::SerializationError(e.to_string()))?;
-            align_write(buf, 4);
             let nanosec = dict
                 .get_item("nanosec")
                 .map_err(|e| MessageError::SerializationError(e.to_string()))?
@@ -455,6 +380,8 @@ fn write_by_type(
 
     Ok(())
 }
+
+// ── decode ──────────────────────────────────────────────────────────────
 
 fn read_field_value<'py>(
     py: Python<'py>,
@@ -470,122 +397,60 @@ fn read_by_type<'py>(
     field_type: &FieldType,
     field_name: &str,
 ) -> Result<Py<PyAny>, MessageError> {
+    let io_err = |e: std::io::Error| MessageError::DeserializationError(e.to_string());
     let value = match field_type {
-        FieldType::Bool => {
-            align_read(reader, 1)?;
-            (reader
-                .read_u8()
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-                != 0)
-            .into_py_any(py)
+        FieldType::Bool => (reader.read_u8().map_err(io_err)? != 0).into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::Int8 => { align_read(reader, 1)?;
-            reader
-            .read_i8()
+            .to_owned()
+            .into_any()
+            .unbind(),
+        FieldType::Int8 => reader.read_i8().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
+            .into_any().unbind(),
+        FieldType::Int16 => reader.read_i16::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::Int16 => { align_read(reader, 2)?;
-            reader
-            .read_i16::<LittleEndian>()
+            .into_any().unbind(),
+        FieldType::Int32 => reader.read_i32::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
+            .into_any().unbind(),
+        FieldType::Int64 => reader.read_i64::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::Int32 => { align_read(reader, 4)?;
-            reader
-            .read_i32::<LittleEndian>()
+            .into_any().unbind(),
+        FieldType::UInt8 => reader.read_u8().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
+            .into_any().unbind(),
+        FieldType::UInt16 => reader.read_u16::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::Int64 => { align_read(reader, 8)?;
-            reader
-            .read_i64::<LittleEndian>()
+            .into_any().unbind(),
+        FieldType::UInt32 => reader.read_u32::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
+            .into_any().unbind(),
+        FieldType::UInt64 => reader.read_u64::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::UInt8 => { align_read(reader, 1)?;
-            reader
-            .read_u8()
+            .into_any().unbind(),
+        FieldType::Float32 => reader.read_f32::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
+            .into_any().unbind(),
+        FieldType::Float64 => reader.read_f64::<LittleEndian>().map_err(io_err)?.into_pyobject(py)
             .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::UInt16 => { align_read(reader, 2)?;
-            reader
-            .read_u16::<LittleEndian>()
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::UInt32 => { align_read(reader, 4)?;
-            reader
-            .read_u32::<LittleEndian>()
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::UInt64 => { align_read(reader, 8)?;
-            reader
-            .read_u64::<LittleEndian>()
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::Float32 => { align_read(reader, 4)?;
-            reader
-            .read_f32::<LittleEndian>()
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
-        FieldType::Float64 => { align_read(reader, 8)?;
-            reader
-            .read_f64::<LittleEndian>()
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-            .into_py_any(py)
-            .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-        }
+            .into_any().unbind(),
         FieldType::RosString => {
-            align_read(reader, 4)?;
-            let len = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
-            let mut buf = vec![0_u8; len as usize];
-            std::io::Read::read_exact(reader, &mut buf)
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
-            if buf.last().copied() != Some(0) {
-                return Err(MessageError::DeserializationError(format!(
-                    "Invalid ROS string for '{}': missing NUL terminator",
-                    field_name
-                )));
-            }
-            buf.pop();
-            String::from_utf8(buf)
+            let len = reader.read_u32::<LittleEndian>().map_err(io_err)? as usize;
+            let mut bytes = vec![0u8; len];
+            reader.read_exact(&mut bytes).map_err(io_err)?;
+            let s = String::from_utf8(bytes).map_err(|e| MessageError::DeserializationError(e.to_string()))?;
+            s.into_pyobject(py)
                 .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-                .into_py_any(py)
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?
+                .into_any().unbind()
         }
         FieldType::RosBytes => {
-            align_read(reader, 4)?;
-            let len = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
-            let mut buf = vec![0_u8; len as usize];
-            std::io::Read::read_exact(reader, &mut buf)
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
-            PyBytes::new(py, &buf).into_any().unbind()
+            let len = reader.read_u32::<LittleEndian>().map_err(io_err)? as usize;
+            let mut bytes = vec![0u8; len];
+            reader.read_exact(&mut bytes).map_err(io_err)?;
+            PyBytes::new(py, &bytes).into_any().unbind()
         }
         FieldType::Array(inner) => {
-            align_read(reader, 4)?;
-            let len = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?
-                as usize;
+            let len = reader.read_u32::<LittleEndian>().map_err(io_err)? as usize;
             let out = PyList::empty(py);
             for _ in 0..len {
                 out.append(read_by_type(py, reader, inner, field_name)?)
@@ -609,19 +474,11 @@ fn read_by_type<'py>(
             out.into_any().unbind()
         }
         FieldType::Time | FieldType::Duration => {
-            align_read(reader, 4)?;
-            let sec = reader
-                .read_i32::<LittleEndian>()
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
-            align_read(reader, 4)?;
-            let nanosec = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
+            let sec = reader.read_i32::<LittleEndian>().map_err(io_err)?;
+            let nanosec = reader.read_u32::<LittleEndian>().map_err(io_err)?;
             let out = PyDict::new(py);
-            out.set_item("sec", sec)
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
-            out.set_item("nanosec", nanosec)
-                .map_err(|e| MessageError::DeserializationError(e.to_string()))?;
+            out.set_item("sec", sec).map_err(|e| MessageError::DeserializationError(e.to_string()))?;
+            out.set_item("nanosec", nanosec).map_err(|e| MessageError::DeserializationError(e.to_string()))?;
             out.into_any().unbind()
         }
     };
@@ -629,29 +486,8 @@ fn read_by_type<'py>(
     Ok(value)
 }
 
-fn align_write(buf: &mut Vec<u8>, align: usize) {
-    let rem = buf.len() % align;
-    if rem != 0 {
-        let pad = align - rem;
-        buf.resize(buf.len() + pad, 0_u8);
-    }
-}
-
-fn align_read(reader: &mut Cursor<&[u8]>, align: usize) -> Result<(), MessageError> {
-    let pos = reader.position() as usize;
-    let rem = pos % align;
-    if rem != 0 {
-        let pad = (align - rem) as u64;
-        let new_pos = reader.position() + pad;
-        if (new_pos as usize) > reader.get_ref().len() {
-            return Err(MessageError::DeserializationError(
-                "Input truncated while aligning CDR stream".into(),
-            ));
-        }
-        reader.set_position(new_pos);
-    }
-    Ok(())
-}
+// ── PyO3 surface — unchanged from the CDR version except serialize()/
+// deserialize()'s header handling ──────────────────────────────────────
 
 #[pyfunction]
 fn register_schema(name: &str, fields: &Bound<'_, PyList>) -> PyResult<()> {
@@ -694,7 +530,7 @@ fn unregister_schema(name: &str) -> PyResult<()> {
 fn serialize(py: Python<'_>, schema_name: &str, values: &Bound<'_, PyDict>) -> PyResult<Py<PyBytes>> {
     let schema = get_schema_internal(schema_name)?;
     let mut out = Vec::with_capacity(128);
-    out.extend_from_slice(&CDR_LE_ENCAPSULATION);
+    out.push(FORMAT_TAG);
     for field in &schema.fields {
         let value = values
             .get_item(&field.name)?
@@ -706,20 +542,21 @@ fn serialize(py: Python<'_>, schema_name: &str, values: &Bound<'_, PyDict>) -> P
 
 #[pyfunction]
 fn deserialize(py: Python<'_>, schema_name: &str, data: &[u8]) -> PyResult<Py<PyDict>> {
-    if data.len() < 4 {
-        return Err(PyValueError::new_err("CDR payload too short (missing encapsulation header)"));
+    if data.is_empty() {
+        return Err(PyValueError::new_err("Empty payload (missing format tag)"));
     }
-    if data[0..2] != CDR_LE_ENCAPSULATION[0..2] {
+    if data[0] != FORMAT_TAG {
         return Err(PyValueError::new_err(format!(
-            "Unsupported CDR encapsulation {:02x?}. Only little-endian CDR is currently supported",
-            &data[0..4]
+            "Unsupported format tag {:#04x}. Expected {:#04x} (ReachPy Binary v1). \
+             This payload may be old CDR-encoded data from before the encoder swap.",
+            data[0], FORMAT_TAG
         )));
     }
 
     let schema = get_schema_internal(schema_name)?;
     let out = PyDict::new(py);
     let mut cursor = Cursor::new(data);
-    cursor.set_position(4);
+    cursor.set_position(1);
 
     for field in &schema.fields {
         let value = read_field_value(py, &mut cursor, field)?;

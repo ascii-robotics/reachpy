@@ -1,0 +1,13 @@
+[package]
+name = "reachpy-python"
+version = "0.1.2-alpha.3"
+edition = "2021"
+
+[lib]
+name = "_reachpy"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+reachpy-messages = { path = "../reachpy-messages" }
+reachpy-runtime = { path = "../reachpy-runtime" }
